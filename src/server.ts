@@ -12,6 +12,10 @@ import {
 } from "./repos/projects.ts";
 import { listMessages } from "./repos/messages.ts";
 import { runBossTurn, startUsageWatchdog } from "./agents/boss.ts";
+import { generatePlan } from "./agents/planner.ts";
+import { latestPlan, approvePlan } from "./repos/plans.ts";
+import { listTasks } from "./repos/tasks.ts";
+import { dispatchProject } from "./dispatcher.ts";
 
 const app = Fastify({ loggerInstance: logger });
 
@@ -63,6 +67,57 @@ app.post("/projects/:id/messages", async (req, reply) => {
   if (!parsed.success) return reply.code(400).send({ error: parsed.error.format() });
   const turn = await runBossTurn({ projectId: id, userMessage: parsed.data.text });
   return { boss: turn };
+});
+
+app.post("/projects/:id/plan/generate", async (req, reply) => {
+  const id = (req.params as { id: string }).id;
+  const project = getProject(id);
+  if (!project) return reply.code(404).send({ error: "unknown project" });
+  const plan = await generatePlan(id);
+  return { plan };
+});
+
+app.get("/projects/:id/plan", async (req, reply) => {
+  const id = (req.params as { id: string }).id;
+  const plan = latestPlan(id);
+  if (!plan) return reply.code(404).send({ error: "no plan yet" });
+  return { plan: JSON.parse(plan.json), approved: plan.approved === 1, tasks: listTasks(id) };
+});
+
+app.post("/projects/:id/plan/approve", async (req, reply) => {
+  const id = (req.params as { id: string }).id;
+  const plan = latestPlan(id);
+  if (!plan) return reply.code(404).send({ error: "no plan to approve" });
+  approvePlan(plan.id);
+  await import("./repos/projects.ts").then(({ setProjectState }) =>
+    setProjectState(id, "in_progress"),
+  );
+  return { ok: true };
+});
+
+app.post("/projects/:id/plan/reject", async (req, reply) => {
+  const id = (req.params as { id: string }).id;
+  const plan = latestPlan(id);
+  if (!plan) return reply.code(404).send({ error: "no plan to reject" });
+  await import("./repos/projects.ts").then(({ setProjectState }) =>
+    setProjectState(id, "qna"),
+  );
+  return { ok: true };
+});
+
+app.post("/projects/:id/dispatch", async (req, reply) => {
+  const id = (req.params as { id: string }).id;
+  const project = getProject(id);
+  if (!project) return reply.code(404).send({ error: "unknown project" });
+  const result = await dispatchProject(id);
+  return { result };
+});
+
+app.get("/projects/:id/tasks", async (req, reply) => {
+  const id = (req.params as { id: string }).id;
+  const project = getProject(id);
+  if (!project) return reply.code(404).send({ error: "unknown project" });
+  return { tasks: listTasks(id) };
 });
 
 startUsageWatchdog();
