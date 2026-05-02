@@ -10,6 +10,7 @@ import {
 } from "../repos/projects.ts";
 import { runBossTurn } from "../agents/boss.ts";
 import { generatePlan } from "../agents/planner.ts";
+import { runResearch } from "../agents/researcher.ts";
 import { latestPlan, approvePlan } from "../repos/plans.ts";
 import { getTask, setTaskStatus } from "../repos/tasks.ts";
 import { dispatchProject } from "../dispatcher.ts";
@@ -190,6 +191,28 @@ export async function startTelegramBot(): Promise<void> {
     else if (tier === "sonnet") setSonnetCap(tokens);
     else return ctx.reply("Tier must be opus or sonnet.");
     await ctx.reply(`Cap set: ${tier} = ${tokens.toLocaleString()} tokens`);
+  });
+
+  bot.command("research", async (ctx) => {
+    if (rejectUnauthorized(ctx)) return;
+    if (!activeProjectId) return ctx.reply("No active project. /new <idea>");
+    await ctx.reply("Researching the market…");
+    try {
+      const r = await runResearch({ projectId: activeProjectId });
+      const lines: string[] = [];
+      lines.push(`Found ${r.similar_products.length} similar product(s):`);
+      for (const p of r.similar_products.slice(0, 5)) {
+        lines.push(`• ${p.name} — ${p.url}`);
+        lines.push(`    stack: ${p.inferred_stack.join(", ")}`);
+      }
+      lines.push("");
+      lines.push(`Recommended stack: ${r.recommended_stack.join(", ") || "(ask user)"}`);
+      lines.push(`Rationale: ${r.rationale}`);
+      await sendToUser(lines.join("\n"));
+    } catch (err) {
+      const e = err as Error;
+      await sendToUser(`⚠️ Research failed: ${e.message}`);
+    }
   });
 
   bot.command("period", async (ctx) => {

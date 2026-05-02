@@ -13,6 +13,7 @@ import {
 import { listMessages } from "./repos/messages.ts";
 import { runBossTurn, startUsageWatchdog } from "./agents/boss.ts";
 import { generatePlan } from "./agents/planner.ts";
+import { runResearch } from "./agents/researcher.ts";
 import { latestPlan, approvePlan } from "./repos/plans.ts";
 import { listTasks } from "./repos/tasks.ts";
 import { dispatchProject } from "./dispatcher.ts";
@@ -112,6 +113,15 @@ app.post("/projects/:id/dispatch", async (req, reply) => {
   if (!project) return reply.code(404).send({ error: "unknown project" });
   const result = await dispatchProject(id);
   return { result };
+});
+
+app.post("/projects/:id/research", async (req, reply) => {
+  const id = (req.params as { id: string }).id;
+  const project = getProject(id);
+  if (!project) return reply.code(404).send({ error: "unknown project" });
+  const body = (req.body ?? {}) as { query?: string };
+  const result = await runResearch({ projectId: id, ...(body.query !== undefined ? { query: body.query } : {}) });
+  return { research: result };
 });
 
 app.get("/projects/:id/tasks", async (req, reply) => {
