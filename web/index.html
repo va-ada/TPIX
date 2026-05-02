@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0d10" />
+  <link rel="manifest" href="/web/manifest.json" />
+  <title>TPIX</title>
+  <style>
+    :root {
+      --bg: #0b0d10;
+      --panel: #14181d;
+      --panel-2: #1a2027;
+      --text: #e6edf3;
+      --muted: #9aa6b2;
+      --accent: #6dd3a4;
+      --warn: #ffb454;
+      --bad: #f97583;
+      --border: #232a32;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif;
+      font-size: 14px; line-height: 1.45;
+    }
+    header {
+      padding: 14px 18px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    }
+    header h1 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: 0.02em; }
+    header .right { display: flex; gap: 14px; align-items: center; color: var(--muted); font-size: 12px; }
+    .pill { padding: 2px 8px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--border); }
+    .pill.online { color: var(--accent); border-color: var(--accent); }
+    .pill.offline { color: var(--bad); border-color: var(--bad); }
+    main { padding: 16px; max-width: 1100px; margin: 0 auto; }
+    section { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 14px; }
+    section h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 600; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+    tr:last-child td { border-bottom: 0; }
+    code { background: var(--panel-2); padding: 1px 6px; border-radius: 4px; font-size: 12px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .meter { background: var(--panel-2); border-radius: 6px; height: 18px; position: relative; overflow: hidden; border: 1px solid var(--border); }
+    .meter .fill { height: 100%; background: var(--accent); transition: width 0.3s; }
+    .meter.warn .fill { background: var(--warn); }
+    .meter.bad .fill { background: var(--bad); }
+    .meter .reserve { position: absolute; right: 0; top: 0; height: 100%; background: repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(255,255,255,0.05) 4px, rgba(255,255,255,0.05) 8px); }
+    .badge { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 11px; }
+    .badge-pending { background: #2c333d; color: var(--muted); }
+    .badge-running { background: #2a3d54; color: #6cb4ff; }
+    .badge-done { background: #1f3a2c; color: var(--accent); }
+    .badge-needs_rework { background: #4a3320; color: var(--warn); }
+    .badge-blocked_awaiting_user { background: #4a2027; color: var(--bad); }
+    .badge-cancelled { background: #2c333d; color: var(--muted); }
+    .row-link { cursor: pointer; }
+    .row-link:hover { background: var(--panel-2); }
+    .empty { color: var(--muted); font-style: italic; padding: 8px 0; }
+    .small { color: var(--muted); font-size: 12px; }
+    .nowrap { white-space: nowrap; }
+    .links a { color: var(--accent); text-decoration: none; margin-right: 12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>TPIX <span class="small" id="version">·</span></h1>
+    <div class="right">
+      <span id="connectivity" class="pill online">●  online</span>
+      <span class="links">
+        <a href="/health" target="_blank">/health</a>
+        <a href="/roles" target="_blank">/roles</a>
+      </span>
+    </div>
+  </header>
+
+  <main>
+    <section>
+      <h2>Subscription headroom</h2>
+      <div class="grid">
+        <div>
+          <div class="small">Opus 4.7 — used <span id="opus-used">…</span> / ceiling <span id="opus-ceiling">…</span>%
+            <span class="small" id="opus-source"></span>
+          </div>
+          <div class="meter" id="opus-meter"><div class="fill" id="opus-fill"></div><div class="reserve" id="opus-reserve"></div></div>
+        </div>
+        <div>
+          <div class="small">Sonnet 4.6 — used <span id="sonnet-used">…</span> / ceiling <span id="sonnet-ceiling">…</span>%
+            <span class="small" id="sonnet-source"></span>
+          </div>
+          <div class="meter" id="sonnet-meter"><div class="fill" id="sonnet-fill"></div><div class="reserve" id="sonnet-reserve"></div></div>
+        </div>
+      </div>
+      <div class="small" style="margin-top:8px">Days remaining in window: <span id="days-remaining">…</span> · refresh every 10s</div>
+    </section>
+
+    <section>
+      <h2>Projects</h2>
+      <table id="projects-table">
+        <thead><tr><th>Slug</th><th>State</th><th>Idea</th><th>Created</th></tr></thead>
+        <tbody><tr><td colspan="4" class="empty">loading…</td></tr></tbody>
+      </table>
+    </section>
+
+    <section id="active-tasks-section" style="display:none">
+      <h2>Active project tasks — <span id="active-slug" class="small"></span></h2>
+      <table id="tasks-table">
+        <thead><tr><th>ID</th><th>Role</th><th>Status</th><th>Description</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Roles loaded</h2>
+      <div id="roles-summary" class="small">…</div>
+    </section>
+  </main>
+
+  <script>
+    let activeProjectId = null;
+
+    async function fetchJson(url) {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(url + " → " + r.status);
+      return r.json();
+    }
+
+    function badge(status) {
+      return `<span class="badge badge-${status}">${status}</span>`;
+    }
+
+    function timeAgo(iso) {
+      const d = new Date(iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z');
+      const ms = Date.now() - d.getTime();
+      if (ms < 60_000) return Math.floor(ms / 1000) + "s ago";
+      if (ms < 3_600_000) return Math.floor(ms / 60_000) + "m ago";
+      if (ms < 86_400_000) return Math.floor(ms / 3_600_000) + "h ago";
+      return Math.floor(ms / 86_400_000) + "d ago";
+    }
+
+    async function refresh() {
+      try {
+        const health = await fetchJson("/health");
+        document.getElementById("version").textContent = "v" + health.version + " · " + health.roles_loaded + " roles";
+        document.getElementById("connectivity").className = "pill online";
+        document.getElementById("connectivity").textContent = "●  online";
+      } catch {
+        document.getElementById("connectivity").className = "pill offline";
+        document.getElementById("connectivity").textContent = "●  unreachable";
+        return;
+      }
+
+      // Headroom
+      try {
+        const budget = await fetchJson("/budget");
+        renderMeter("opus", budget.opus);
+        renderMeter("sonnet", budget.sonnet);
+        document.getElementById("days-remaining").textContent = budget.opus.days_remaining;
+      } catch (e) { /* endpoint may not exist on first load */ }
+
+      // Projects
+      try {
+        const projects = await fetchJson("/projects");
+        const tbody = document.querySelector("#projects-table tbody");
+        if (projects.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="4" class="empty">No projects yet. Send /new in Telegram.</td></tr>`;
+        } else {
+          tbody.innerHTML = projects.map((p) => `
+            <tr class="row-link" data-id="${p.id}">
+              <td><code>${p.slug}</code></td>
+              <td>${badge(p.state)}</td>
+              <td>${escape(p.idea)}</td>
+              <td class="small nowrap">${timeAgo(p.created_at)}</td>
+            </tr>
+          `).join("");
+          for (const row of tbody.querySelectorAll(".row-link")) {
+            row.addEventListener("click", () => loadActive(row.dataset.id));
+          }
+        }
+      } catch {}
+
+      // Roles summary
+      try {
+        const roles = await fetchJson("/roles");
+        const byCat = {};
+        for (const r of roles) (byCat[r.category] ||= []).push(r.id);
+        document.getElementById("roles-summary").innerHTML = Object.entries(byCat)
+          .map(([cat, ids]) => `<strong>${cat}</strong> (${ids.length}): ${ids.join(", ")}`)
+          .join("<br>");
+      } catch {}
+
+      // Active project tasks (if any)
+      if (activeProjectId) await loadActive(activeProjectId);
+    }
+
+    async function loadActive(projectId) {
+      activeProjectId = projectId;
+      const sec = document.getElementById("active-tasks-section");
+      try {
+        const data = await fetchJson("/projects/" + projectId + "/tasks");
+        const projData = await fetchJson("/projects/" + projectId);
+        document.getElementById("active-slug").textContent = projData.project.slug;
+        sec.style.display = "";
+        const tbody = document.querySelector("#tasks-table tbody");
+        if (data.tasks.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="4" class="empty">No tasks yet. Generate plan via Telegram.</td></tr>`;
+        } else {
+          tbody.innerHTML = data.tasks.map((t) => `
+            <tr>
+              <td><code>${t.id}</code></td>
+              <td>${t.role}</td>
+              <td>${badge(t.status)}${t.required_tier ? ` <span class="small">[req: ${t.required_tier}]</span>` : ''}</td>
+              <td>${escape(t.description)}</td>
+            </tr>
+          `).join("");
+        }
+      } catch (e) {
+        sec.style.display = "none";
+      }
+    }
+
+    function renderMeter(prefix, h) {
+      const used = h.used_pct ?? 0;
+      const ceiling = h.ceiling_pct ?? 100;
+      const reserve = h.reserve_pct ?? 0;
+      document.getElementById(prefix + "-used").textContent = used.toFixed(1);
+      document.getElementById(prefix + "-ceiling").textContent = ceiling;
+      document.getElementById(prefix + "-source").textContent = " (" + (h.source ?? "?") + ")";
+      const fill = document.getElementById(prefix + "-fill");
+      const meter = document.getElementById(prefix + "-meter");
+      fill.style.width = Math.min(100, used) + "%";
+      meter.classList.remove("warn", "bad");
+      if (used >= ceiling) meter.classList.add("bad");
+      else if (used >= ceiling * 0.7) meter.classList.add("warn");
+      const reserveEl = document.getElementById(prefix + "-reserve");
+      reserveEl.style.width = reserve + "%";
+    }
+
+    function escape(s) {
+      const div = document.createElement("div");
+      div.textContent = String(s ?? "");
+      return div.innerHTML;
+    }
+
+    refresh();
+    setInterval(refresh, 10_000);
+
+    // Register service worker for offline shell
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/web/sw.js").catch(() => {});
+    }
+  </script>
+</body>
+</html>

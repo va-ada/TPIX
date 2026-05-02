@@ -1,7 +1,16 @@
 import Fastify from "fastify";
+import fastifyStatic from "@fastify/static";
 import { z } from "zod";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { config, VERSION } from "./config.ts";
 import { logger } from "./logger.ts";
+import { getOpusHeadroom, getSonnetHeadroom } from "./cost/headroom.ts";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const REPO_ROOT = resolve(__dirname, "..");
+const WEB_DIR = join(REPO_ROOT, "web");
 import "./db.ts";
 import { route } from "./llm/router.ts";
 import { roles } from "./roles/registry.ts";
@@ -23,11 +32,24 @@ const app = Fastify({ loggerInstance: logger });
 
 const startedAt = Date.now();
 
+await app.register(fastifyStatic, {
+  root: WEB_DIR,
+  prefix: "/web/",
+  decorateReply: false,
+});
+
+app.get("/", async (_req, reply) => reply.redirect("/web/"));
+
 app.get("/health", async () => ({
   ok: true,
   uptime_ms: Date.now() - startedAt,
   version: VERSION,
   roles_loaded: roles.size(),
+}));
+
+app.get("/budget", async () => ({
+  opus: getOpusHeadroom(),
+  sonnet: getSonnetHeadroom(),
 }));
 
 app.get("/roles", async () => roles.all());
