@@ -61,6 +61,11 @@
     .small { color: var(--muted); font-size: 12px; }
     .nowrap { white-space: nowrap; }
     .links a { color: var(--accent); text-decoration: none; margin-right: 12px; }
+    .btn { background: var(--panel-2); border: 1px solid var(--border); color: var(--text); padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; }
+    .btn:hover { background: #232a32; }
+    .btn.danger { color: var(--bad); border-color: var(--bad); }
+    .btn-icon { background: none; border: none; color: var(--muted); cursor: pointer; padding: 0 4px; font-size: 13px; }
+    .btn-icon:hover { color: var(--text); }
   </style>
 </head>
 <body>
@@ -76,6 +81,17 @@
   </header>
 
   <main>
+    <section>
+      <h2>Control</h2>
+      <div id="control-summary" class="small" style="margin-bottom:8px">…</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn" data-action="pause">⏸  Pause dispatcher</button>
+        <button class="btn" data-action="resume">▶️  Resume dispatcher</button>
+        <button class="btn danger" data-action="stop_all">🛑 STOP ALL</button>
+      </div>
+      <div class="small" style="margin-top:8px">Per-task and per-role pause/stop available via Telegram (<code>/pause_role &lt;id&gt;</code>, <code>/stop_task &lt;id&gt;</code>) or task row buttons below.</div>
+    </section>
+
     <section>
       <h2>Subscription headroom</h2>
       <div class="grid">
@@ -106,7 +122,7 @@
     <section id="active-tasks-section" style="display:none">
       <h2>Active project tasks — <span id="active-slug" class="small"></span></h2>
       <table id="tasks-table">
-        <thead><tr><th>ID</th><th>Role</th><th>Status</th><th>Description</th></tr></thead>
+        <thead><tr><th>ID</th><th>Role</th><th>Status</th><th>Description</th><th>Actions</th></tr></thead>
         <tbody></tbody>
       </table>
     </section>
@@ -180,6 +196,15 @@
         }
       } catch {}
 
+      // Control state
+      try {
+        const ctrl = await fetchJson("/control");
+        document.getElementById("control-summary").innerHTML =
+          `Dispatcher: <strong style="color:${ctrl.dispatcher_paused ? 'var(--bad)' : 'var(--accent)'}">${ctrl.dispatcher_paused ? '⏸ paused' : '▶️ running'}</strong>` +
+          ` · Paused roles: ${ctrl.paused_roles.length === 0 ? '(none)' : ctrl.paused_roles.map(r => `<code>${r}</code>`).join(', ')}` +
+          ` · Paused tasks: ${ctrl.paused_tasks}`;
+      } catch {}
+
       // Roles summary
       try {
         const roles = await fetchJson("/roles");
@@ -204,16 +229,35 @@
         sec.style.display = "";
         const tbody = document.querySelector("#tasks-table tbody");
         if (data.tasks.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="4" class="empty">No tasks yet. Generate plan via Telegram.</td></tr>`;
+          tbody.innerHTML = `<tr><td colspan="5" class="empty">No tasks yet. Generate plan via Telegram.</td></tr>`;
         } else {
-          tbody.innerHTML = data.tasks.map((t) => `
-            <tr>
-              <td><code>${t.id}</code></td>
-              <td>${t.role}</td>
-              <td>${badge(t.status)}${t.required_tier ? ` <span class="small">[req: ${t.required_tier}]</span>` : ''}</td>
-              <td>${escape(t.description)}</td>
-            </tr>
-          `).join("");
+          tbody.innerHTML = data.tasks.map((t) => {
+            const canPause = ["pending", "ready", "needs_rework"].includes(t.status);
+            const canResume = t.status === "paused";
+            const canStop = !["done", "cancelled"].includes(t.status);
+            const actions = [
+              canPause ? `<button class="btn-icon" data-task="${t.id}" data-act="pause" title="pause task">⏸</button>` : "",
+              canResume ? `<button class="btn-icon" data-task="${t.id}" data-act="resume" title="resume task">▶️</button>` : "",
+              canStop ? `<button class="btn-icon" data-task="${t.id}" data-act="stop" title="stop (cancel) task">🛑</button>` : "",
+            ].join("");
+            return `
+              <tr>
+                <td><code>${t.id}</code></td>
+                <td>${t.role}</td>
+                <td>${badge(t.status)}${t.required_tier ? ` <span class="small">[req: ${t.required_tier}]</span>` : ''}</td>
+                <td>${escape(t.description)}</td>
+                <td class="nowrap">${actions}</td>
+              </tr>
+            `;
+          }).join("");
+          for (const btn of tbody.querySelectorAll(".btn-icon")) {
+            btn.addEventListener("click", async () => {
+              const id = btn.dataset.task;
+              const act = btn.dataset.act;
+              await fetch(`/control/task/${id}/${act}`, { method: "POST" });
+              await refresh();
+            });
+          }
         }
       } catch (e) {
         sec.style.display = "none";
@@ -241,6 +285,16 @@
       const div = document.createElement("div");
       div.textContent = String(s ?? "");
       return div.innerHTML;
+    }
+
+    // Wire control buttons
+    for (const btn of document.querySelectorAll("[data-action]")) {
+      btn.addEventListener("click", async () => {
+        const action = btn.dataset.action;
+        if (action === "stop_all" && !confirm("Cancel ALL pending tasks across every project?")) return;
+        await fetch(`/control/${action}`, { method: "POST" });
+        await refresh();
+      });
     }
 
     refresh();

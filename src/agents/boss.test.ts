@@ -15,7 +15,7 @@ import {
   tickWatchdog,
   READY_TOKEN,
 } from "./boss.ts";
-import { getOpusHeadroom, getSonnetHeadroom } from "../cost/headroom.ts";
+import { getOpusHeadroom, getSonnetHeadroom, setPeriod } from "../cost/headroom.ts";
 
 const mockedRoute = vi.mocked(route);
 
@@ -23,6 +23,8 @@ function resetState() {
   db.prepare("DELETE FROM messages").run();
   db.prepare("DELETE FROM projects").run();
   db.prepare("DELETE FROM tokens_log").run();
+  db.prepare("DELETE FROM settings").run();
+  db.prepare("DELETE FROM subscription_usage").run();
   mockedRoute.mockReset();
 }
 
@@ -92,10 +94,13 @@ describe("allocateModels", () => {
     expect(allocation.t1?.model).toBe("claude-opus-4-7");
   });
 
-  it("downgrades opus-hint to sonnet when opus headroom is zero (start-of-week default)", () => {
-    // Default Cost Controller stub: days_remaining=7 → opus_reserve=140% → opus_ceiling=0
-    // and sonnet_reserve=70% → sonnet_ceiling=30%. So opus-hint roles downgrade to
-    // sonnet, sonnet-hint roles stay on sonnet, ollama-hint roles stay on ollama.
+  it("downgrades opus-hint to sonnet when opus headroom is zero", () => {
+    // Pin a fresh 7-day window starting today: days_remaining=7 →
+    // opus_reserve=140% → opus_ceiling=0 → opus headroom 0.
+    // sonnet_reserve=70% → sonnet_ceiling=30% → headroom 30%.
+    // So opus-hint roles downgrade to sonnet, sonnet-hint stay on sonnet,
+    // ollama-hint stay on ollama.
+    setPeriod(new Date().toISOString(), 7);
     const allocation = allocateModels({
       pendingTasks: [
         { id: "t1", role: "researcher", description: "scan market" },

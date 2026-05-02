@@ -20,6 +20,8 @@ function reset() {
   db.prepare("DELETE FROM tasks").run();
   db.prepare("DELETE FROM messages").run();
   db.prepare("DELETE FROM projects").run();
+  db.prepare("DELETE FROM settings").run();
+  db.prepare("DELETE FROM subscription_usage").run();
   mockedRoute.mockReset();
 }
 

@@ -27,6 +27,18 @@ import { latestPlan, approvePlan } from "./repos/plans.ts";
 import { listTasks } from "./repos/tasks.ts";
 import { dispatchProject } from "./dispatcher.ts";
 import { startTelegramBot } from "./bot/telegram.ts";
+import {
+  pauseDispatcher,
+  resumeDispatcher,
+  stopAll,
+  pauseRole,
+  resumeRole,
+  stopRole,
+  pauseTask,
+  resumeTask,
+  stopTask,
+  controlSummary,
+} from "./control.ts";
 
 const app = Fastify({ loggerInstance: logger });
 
@@ -51,6 +63,62 @@ app.get("/budget", async () => ({
   opus: getOpusHeadroom(),
   sonnet: getSonnetHeadroom(),
 }));
+
+app.get("/control", async () => controlSummary());
+
+app.post("/control/pause", async () => {
+  pauseDispatcher();
+  return controlSummary();
+});
+
+app.post("/control/resume", async () => {
+  resumeDispatcher();
+  return controlSummary();
+});
+
+app.post("/control/stop_all", async () => {
+  const r = stopAll();
+  return { ...r, ...controlSummary() };
+});
+
+const RoleParam = z.object({ role: z.string().min(1) });
+app.post("/control/role/:role/pause", async (req, reply) => {
+  const p = RoleParam.safeParse(req.params);
+  if (!p.success) return reply.code(400).send({ error: p.error.format() });
+  if (!roles.has(p.data.role)) return reply.code(404).send({ error: "unknown role" });
+  pauseRole(p.data.role);
+  return controlSummary();
+});
+app.post("/control/role/:role/resume", async (req, reply) => {
+  const p = RoleParam.safeParse(req.params);
+  if (!p.success) return reply.code(400).send({ error: p.error.format() });
+  resumeRole(p.data.role);
+  return controlSummary();
+});
+app.post("/control/role/:role/stop", async (req, reply) => {
+  const p = RoleParam.safeParse(req.params);
+  if (!p.success) return reply.code(400).send({ error: p.error.format() });
+  if (!roles.has(p.data.role)) return reply.code(404).send({ error: "unknown role" });
+  const cancelled = stopRole(p.data.role);
+  return { cancelled, ...controlSummary() };
+});
+
+const TaskParam = z.object({ id: z.string().min(1) });
+app.post("/control/task/:id/pause", async (req, reply) => {
+  const p = TaskParam.safeParse(req.params);
+  if (!p.success) return reply.code(400).send({ error: p.error.format() });
+  try { return pauseTask(p.data.id); } catch (e) { return reply.code(404).send({ error: (e as Error).message }); }
+});
+app.post("/control/task/:id/resume", async (req, reply) => {
+  const p = TaskParam.safeParse(req.params);
+  if (!p.success) return reply.code(400).send({ error: p.error.format() });
+  try { return resumeTask(p.data.id); } catch (e) { return reply.code(404).send({ error: (e as Error).message }); }
+});
+app.post("/control/task/:id/stop", async (req, reply) => {
+  const p = TaskParam.safeParse(req.params);
+  if (!p.success) return reply.code(400).send({ error: p.error.format() });
+  try { return stopTask(p.data.id); } catch (e) { return reply.code(404).send({ error: (e as Error).message }); }
+});
 
 app.get("/roles", async () => roles.all());
 

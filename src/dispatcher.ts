@@ -20,6 +20,7 @@ import {
 import { getOpusHeadroom, getSonnetHeadroom } from "./cost/headroom.ts";
 import { runReviewers, MAX_TASK_ATTEMPTS } from "./reviewers.ts";
 import { commitIfWorthIt, noteTaskCompleted } from "./git.ts";
+import { dispatchSkipReason, isDispatcherPaused, pausedRoles } from "./control.ts";
 
 const DEFAULT_CONCURRENCY = 3;
 
@@ -65,10 +66,25 @@ export async function dispatchProject(
   const project = getProject(projectId);
   if (!project) throw new Error(`unknown project: ${projectId}`);
 
-  const concurrency = options.concurrency ?? DEFAULT_CONCURRENCY;
-  const ready = readyTasks(projectId);
-  if (ready.length === 0) {
+  if (isDispatcherPaused()) {
+    logger.info({ projectId }, "dispatcher globally paused — skipping");
     return { ranTaskIds: [], blockedTaskIds: [], remainingPending: 0 };
+  }
+
+  const concurrency = options.concurrency ?? DEFAULT_CONCURRENCY;
+  const allReady = readyTasks(projectId);
+  const pausedRoleSet = pausedRoles();
+  const ready = allReady.filter((t) => {
+    const reason = dispatchSkipReason(t);
+    if (reason) {
+      logger.debug({ taskId: t.id, reason }, "task skipped by control");
+      return false;
+    }
+    return !pausedRoleSet.has(t.role);
+  });
+
+  if (ready.length === 0) {
+    return { ranTaskIds: [], blockedTaskIds: [], remainingPending: allReady.length };
   }
 
   ensureWorkspace(project.slug);

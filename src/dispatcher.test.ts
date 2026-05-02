@@ -9,6 +9,7 @@ import { db } from "./db.ts";
 import { createProject } from "./repos/projects.ts";
 import { insertTask, listTasks, type TaskStatus } from "./repos/tasks.ts";
 import { dispatchProject } from "./dispatcher.ts";
+import { setPeriod } from "./cost/headroom.ts";
 
 const mockedRoute = vi.mocked(route);
 
@@ -19,6 +20,8 @@ function reset() {
   db.prepare("DELETE FROM tasks").run();
   db.prepare("DELETE FROM messages").run();
   db.prepare("DELETE FROM projects").run();
+  db.prepare("DELETE FROM settings").run();
+  db.prepare("DELETE FROM subscription_usage").run();
   mockedRoute.mockReset();
 }
 
@@ -88,6 +91,8 @@ describe("dispatchProject", () => {
   });
 
   it("hard-stops a task whose required_tier has zero headroom and never calls the LLM for it", async () => {
+    // Fresh 7-day window → opus_ceiling=0 (full reserve)
+    setPeriod(new Date().toISOString(), 7);
     const p = createProject("hard stop test");
     insertTask({
       id: "t1",

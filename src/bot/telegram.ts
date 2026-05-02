@@ -25,6 +25,19 @@ import {
   getSonnetCap,
 } from "../cost/headroom.ts";
 import { commitIfWorthIt } from "../git.ts";
+import {
+  pauseDispatcher,
+  resumeDispatcher,
+  stopAll,
+  pauseRole,
+  resumeRole,
+  stopRole,
+  pauseTask,
+  resumeTask,
+  stopTask,
+  controlSummary,
+} from "../control.ts";
+import { roles } from "../roles/registry.ts";
 
 const TG_MESSAGE_LIMIT = 4096;
 let activeProjectId: string | null = null;
@@ -101,13 +114,27 @@ export async function startTelegramBot(): Promise<void> {
       [
         "TPIX online.",
         "",
+        "PROJECTS",
         "/new <idea> — start a project",
         "/projects — list projects",
         "/status — show active project state",
-        "/budget — Opus + Sonnet headroom",
         "/cancel <id> — cancel a project",
-        "/use <opus|sonnet|ollama> — set model override on the active project",
+        "/research — run market scan on active project",
         "Free-text reply continues the active project's Q&A.",
+        "",
+        "MODEL / BUDGET",
+        "/budget — Opus + Sonnet headroom",
+        "/use <opus|sonnet|ollama|auto> — model override on active project",
+        "/sync <opus_pct> <sonnet_pct> — push real subscription usage (1h TTL)",
+        "/setcap <opus|sonnet> <tokens> — set period token cap",
+        "/period <YYYY-MM-DD> <length_days> — reset accounting window",
+        "",
+        "CONTROL",
+        "/pause | /resume — pause/resume the whole dispatcher",
+        "/stop_all — cancel every pending task and pause",
+        "/pause_role <id> | /resume_role <id> | /stop_role <id> — per-employee",
+        "/pause_task <id> | /resume_task <id> | /stop_task <id> — per-task",
+        "/control — current pause/stop state",
       ].join("\n"),
     );
   });
@@ -191,6 +218,100 @@ export async function startTelegramBot(): Promise<void> {
     else if (tier === "sonnet") setSonnetCap(tokens);
     else return ctx.reply("Tier must be opus or sonnet.");
     await ctx.reply(`Cap set: ${tier} = ${tokens.toLocaleString()} tokens`);
+  });
+
+  bot.command("pause", async (ctx) => {
+    if (rejectUnauthorized(ctx)) return;
+    pauseDispatcher();
+    await ctx.reply("⏸  Dispatcher paused. In-flight tasks will finish; no new tasks pick up until /resume.");
+  });
+
+  bot.command("resume", async (ctx) => {
+    if (rejectUnauthorized(ctx)) return;
+    resumeDispatcher();
+    await ctx.reply("▶️  Dispatcher resumed.");
+  });
+
+  bot.command("stop_all", async (ctx) => {
+    if (rejectUnauthorized(ctx)) return;
+    const r = stopAll();
+    await ctx.reply(
+      `🛑 STOP ALL — cancelled ${r.cancelled} pending tasks across ${r.projects} active project(s). Dispatcher paused.`,
+    );
+  });
+
+  bot.command("pause_role", async (ctx) => {
+    if (rejectUnauthorized(ctx)) return;
+    const roleId = ctx.match.trim();
+    if (!roleId) return ctx.reply("Usage: /pause_role <role-id>  (see /roles)");
+    if (!roles.has(roleId)) return ctx.reply(`Unknown role: ${roleId}`);
+    pauseRole(roleId);
+    await ctx.reply(`⏸  Role paused: ${roleId}. Pending tasks for this role won't run until /resume_role.`);
+  });
+
+  bot.command("resume_role", async (ctx) => {
+    if (rejectUnauthorized(ctx)) return;
+    const roleId = ctx.match.trim();
+    if (!roleId) return ctx.reply("Usage: /resume_role <role-id>");
+    resumeRole(roleId);
+    await ctx.reply(`▶️  Role resumed: ${roleId}`);
+  });
+
+  bot.command("stop_role", async (ctx) => {
+    if (rejectUnauthorized(ctx)) return;
+    const roleId = ctx.match.trim();
+    if (!roleId) return ctx.reply("Usage: /stop_role <role-id>");
+    if (!roles.has(roleId)) return ctx.reply(`Unknown role: ${roleId}`);
+    const cancelled = stopRole(roleId);
+    await ctx.reply(`🛑 Stopped ${roleId} — cancelled ${cancelled} pending task(s).`);
+  });
+
+  bot.command("pause_task", async (ctx) => {
+    if (rejectUnauthorized(ctx)) return;
+    const id = ctx.match.trim();
+    if (!id) return ctx.reply("Usage: /pause_task <task-id>");
+    try {
+      const t = pauseTask(id);
+      await ctx.reply(`⏸  Task paused: ${t.id} (${t.role})`);
+    } catch (e) {
+      await ctx.reply(`Error: ${(e as Error).message}`);
+    }
+  });
+
+  bot.command("resume_task", async (ctx) => {
+    if (rejectUnauthorized(ctx)) return;
+    const id = ctx.match.trim();
+    if (!id) return ctx.reply("Usage: /resume_task <task-id>");
+    try {
+      const t = resumeTask(id);
+      await ctx.reply(`▶️  Task resumed: ${t.id} → ${t.status}`);
+    } catch (e) {
+      await ctx.reply(`Error: ${(e as Error).message}`);
+    }
+  });
+
+  bot.command("stop_task", async (ctx) => {
+    if (rejectUnauthorized(ctx)) return;
+    const id = ctx.match.trim();
+    if (!id) return ctx.reply("Usage: /stop_task <task-id>");
+    try {
+      const t = stopTask(id);
+      await ctx.reply(`🛑 Task cancelled: ${t.id} (${t.role})`);
+    } catch (e) {
+      await ctx.reply(`Error: ${(e as Error).message}`);
+    }
+  });
+
+  bot.command("control", async (ctx) => {
+    if (rejectUnauthorized(ctx)) return;
+    const s = controlSummary();
+    await ctx.reply(
+      [
+        `Dispatcher: ${s.dispatcher_paused ? "⏸ paused" : "▶️ running"}`,
+        `Paused roles: ${s.paused_roles.length === 0 ? "(none)" : s.paused_roles.join(", ")}`,
+        `Paused tasks: ${s.paused_tasks}`,
+      ].join("\n"),
+    );
   });
 
   bot.command("research", async (ctx) => {

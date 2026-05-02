@@ -7,6 +7,7 @@ export type TaskStatus =
   | "needs_rework"
   | "blocked_awaiting_user"
   | "awaiting_headroom"
+  | "paused"
   | "done"
   | "cancelled";
 
