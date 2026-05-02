@@ -1,0 +1,27 @@
+node_modules/
+dist/
+.next/
+*.log
+.DS_Store
+
+# Local data + secrets
+.env
+.env.*
+!.env.example
+data/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+
+# Per-project nested artifacts (projects/<slug>/ workspaces)
+projects/*/node_modules/
+projects/*/.next/
+projects/*/dist/
+projects/*/.venv/
+projects/*/__pycache__/
+
+# Memory + scratch
+memory/
+.tpix-cache/
+logs/
