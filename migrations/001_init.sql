@@ -87,10 +87,13 @@ CREATE TABLE IF NOT EXISTS agent_runs (
   finished_at TEXT
 );
 
+-- tokens_log is denormalized telemetry; intentionally no FK on project_id so a
+-- stray/unknown id never breaks logging (and so unit tests can run without
+-- seeding a projects row).
 CREATE TABLE IF NOT EXISTS tokens_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   role_id TEXT NOT NULL,
-  project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+  project_id TEXT,
   route TEXT NOT NULL,
   model TEXT NOT NULL,
   prompt_chars INTEGER NOT NULL DEFAULT 0,
