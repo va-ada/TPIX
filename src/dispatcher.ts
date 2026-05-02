@@ -1,5 +1,5 @@
 import { mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { db } from "./db.ts";
 import { logger } from "./logger.ts";
 import { route } from "./llm/router.ts";
@@ -57,6 +57,38 @@ export interface DispatchResult {
 export interface DispatchOptions {
   concurrency?: number;
   manualOverrides?: Record<string, string>;
+}
+
+/**
+ * Run the dispatcher repeatedly until the project either completes or makes
+ * no forward progress (e.g., all remaining tasks are blocked or paused).
+ * Use this from external triggers (Telegram approve button, /dispatch HTTP);
+ * use `dispatchProject` for one-shot batch testing.
+ */
+export async function dispatchProjectUntilStable(
+  projectId: string,
+  options: DispatchOptions = {},
+): Promise<DispatchResult> {
+  const totalRan: string[] = [];
+  const totalBlocked: string[] = [];
+  let lastRemaining = -1;
+  for (let i = 0; i < 50; i++) {
+    const result = await dispatchProject(projectId, options);
+    totalRan.push(...result.ranTaskIds);
+    for (const id of result.blockedTaskIds) {
+      if (!totalBlocked.includes(id)) totalBlocked.push(id);
+    }
+    // Stop when no progress this tick OR project complete
+    if (result.ranTaskIds.length === 0) break;
+    if (result.remainingPending === 0) break;
+    if (result.remainingPending === lastRemaining) break;
+    lastRemaining = result.remainingPending;
+  }
+  return {
+    ranTaskIds: totalRan,
+    blockedTaskIds: totalBlocked,
+    remainingPending: lastRemaining < 0 ? 0 : lastRemaining,
+  };
 }
 
 export async function dispatchProject(
@@ -146,6 +178,7 @@ export async function dispatchProject(
 
       let result;
       try {
+        const workspaceCwd = resolve(process.cwd(), "projects", project.slug);
         result = await route({
           roleId: task.role,
           projectId,
@@ -154,6 +187,11 @@ export async function dispatchProject(
           systemPrompt: role.system_prompt,
           offlineFallbackModel: role.offline_model,
           allocatedBy: overrides[task.id] ? "manual_override" : "boss",
+          // Critical: workers need actual tools to do real work
+          ...(role.allowed_tools.length > 0 ? { allowedTools: role.allowed_tools } : {}),
+          cwd: workspaceCwd,
+          permissionMode: "bypassPermissions",
+          timeoutMs: 15 * 60 * 1000,
         });
       } catch (err) {
         finishAgentRun.run(null, null, "failed", agentRunId);

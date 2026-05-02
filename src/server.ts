@@ -25,7 +25,7 @@ import { generatePlan } from "./agents/planner.ts";
 import { runResearch } from "./agents/researcher.ts";
 import { latestPlan, approvePlan } from "./repos/plans.ts";
 import { listTasks } from "./repos/tasks.ts";
-import { dispatchProject } from "./dispatcher.ts";
+import { dispatchProject, dispatchProjectUntilStable } from "./dispatcher.ts";
 import { startTelegramBot } from "./bot/telegram.ts";
 import {
   pauseDispatcher,
@@ -201,7 +201,8 @@ app.post("/projects/:id/dispatch", async (req, reply) => {
   const id = (req.params as { id: string }).id;
   const project = getProject(id);
   if (!project) return reply.code(404).send({ error: "unknown project" });
-  const result = await dispatchProject(id);
+  const drain = (req.query as { drain?: string }).drain !== "false";
+  const result = drain ? await dispatchProjectUntilStable(id) : await dispatchProject(id);
   return { result };
 });
 

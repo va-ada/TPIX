@@ -14,6 +14,9 @@ export interface RouteArgs {
   sessionId?: string;
   systemPrompt?: string;
   allowedTools?: string[];
+  cwd?: string;
+  permissionMode?: "default" | "acceptEdits" | "auto" | "bypassPermissions" | "dontAsk" | "plan";
+  timeoutMs?: number;
   /**
    * Ollama tag to fall back to when `model` is a Claude model and Anthropic is unreachable.
    * Once the role registry exists (Phase 3), this is auto-resolved per role; for now callers
@@ -59,6 +62,9 @@ export async function route(args: RouteArgs): Promise<RouteResult> {
     sessionId,
     systemPrompt,
     allowedTools,
+    cwd,
+    permissionMode,
+    timeoutMs,
     offlineFallbackModel,
     allocatedBy,
   } = args;
@@ -75,6 +81,9 @@ export async function route(args: RouteArgs): Promise<RouteResult> {
         ...(sessionId !== undefined ? { sessionId } : {}),
         ...(systemPrompt !== undefined ? { systemPrompt } : {}),
         ...(allowedTools !== undefined ? { allowedTools } : {}),
+        ...(cwd !== undefined ? { cwd } : {}),
+        ...(permissionMode !== undefined ? { permissionMode } : {}),
+        ...(timeoutMs !== undefined ? { timeoutMs } : {}),
       });
       result = claudeToRouteResult(r, "claude", false);
     } else {

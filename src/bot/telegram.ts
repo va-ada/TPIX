@@ -13,7 +13,7 @@ import { generatePlan } from "../agents/planner.ts";
 import { runResearch } from "../agents/researcher.ts";
 import { latestPlan, approvePlan } from "../repos/plans.ts";
 import { getTask, setTaskStatus } from "../repos/tasks.ts";
-import { dispatchProject } from "../dispatcher.ts";
+import { dispatchProject, dispatchProjectUntilStable } from "../dispatcher.ts";
 import {
   getOpusHeadroom,
   getSonnetHeadroom,
@@ -390,12 +390,17 @@ export async function startTelegramBot(): Promise<void> {
     approvePlan(plan.id);
     setProjectState(projectId, "in_progress");
     await ctx.answerCallbackQuery({ text: "Approved." });
-    await sendToUser(`✅ Plan approved for ${projectId.slice(0, 8)} — dispatching tasks…`);
-    void dispatchProject(projectId).then((r) =>
-      sendToUser(
-        `Dispatch tick: ran ${r.ranTaskIds.length}, blocked ${r.blockedTaskIds.length}, remaining ${r.remainingPending}`,
-      ),
-    );
+    await sendToUser(`✅ Plan approved for ${projectId.slice(0, 8)} — dispatching tasks (will keep draining)…`);
+    void dispatchProjectUntilStable(projectId)
+      .then((r) =>
+        sendToUser(
+          `Dispatch settled: ran ${r.ranTaskIds.length}, blocked ${r.blockedTaskIds.length}, remaining ${r.remainingPending}.\n` +
+            (r.remainingPending > 0
+              ? `Some tasks need attention. Use /control or /status to inspect.`
+              : `All tasks done. Workspace pushed to GitHub.`),
+        ),
+      )
+      .catch((err) => sendToUser(`⚠️ Dispatch error: ${(err as Error).message}`));
   });
 
   bot.callbackQuery(/^plan:reject:(.+)$/, async (ctx) => {

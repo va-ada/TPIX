@@ -10,6 +10,12 @@ export interface RunClaudeArgs {
   allowedTools?: string[];
   systemPrompt?: string;
   timeoutMs?: number;
+  /**
+   * "bypassPermissions" lets Claude run all of its allowed tools without an
+   * interactive permission prompt — required for unattended TPIX workers.
+   * Default "default" (interactive). Pass "bypassPermissions" for workers.
+   */
+  permissionMode?: "default" | "acceptEdits" | "auto" | "bypassPermissions" | "dontAsk" | "plan";
 }
 
 export interface RunClaudeResult {
@@ -40,13 +46,14 @@ interface ClaudeJsonOutput {
 }
 
 export async function runClaude(args: RunClaudeArgs): Promise<RunClaudeResult> {
-  const { prompt, model, sessionId, cwd, allowedTools, systemPrompt, timeoutMs } = args;
+  const { prompt, model, sessionId, cwd, allowedTools, systemPrompt, timeoutMs, permissionMode } = args;
 
   const cliArgs: string[] = ["-p", "--model", model, "--output-format", "json"];
   if (sessionId) cliArgs.push("--resume", sessionId);
   if (allowedTools && allowedTools.length > 0) {
     cliArgs.push("--allowedTools", allowedTools.join(" "));
   }
+  if (permissionMode) cliArgs.push("--permission-mode", permissionMode);
   if (systemPrompt) cliArgs.push("--append-system-prompt", systemPrompt);
 
   const started = Date.now();
@@ -55,7 +62,7 @@ export async function runClaude(args: RunClaudeArgs): Promise<RunClaudeResult> {
   try {
     const result = await execa(config.claudeCommand, cliArgs, {
       input: prompt,
-      cwd,
+      ...(cwd !== undefined ? { cwd } : {}),
       timeout: timeoutMs ?? 10 * 60 * 1000,
       reject: true,
       stripFinalNewline: false,

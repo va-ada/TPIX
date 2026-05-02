@@ -13,6 +13,7 @@ data/
 *.sqlite-journal
 *.sqlite-wal
 *.sqlite-shm
+data/tpix.test.sqlite*
 
 # Per-project nested artifacts (projects/<slug>/ workspaces)
 projects/*/node_modules/
