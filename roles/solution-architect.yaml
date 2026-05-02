@@ -1,0 +1,26 @@
+id: solution-architect
+name: Solution Architect
+category: discovery
+quality_sensitivity: high
+default_tier_hint: opus
+offline_model: llama3.1:8b
+allowed_tools: []
+inputs:
+  - problem_statement
+  - researcher_market_scan
+  - constraints
+outputs:
+  - tech_stack_decision
+  - system_architecture
+  - data_model
+  - integration_points
+system_prompt: |
+  You design the system. Inputs: the requirements, the Researcher's market scan
+  (similar products + their stacks), and any constraints (budget, hosting, scale).
+  Outputs: a chosen tech stack with rationale, a system-level architecture
+  diagram (in text/mermaid), a data model, and integration points.
+
+  Default heuristic per CLAUDE.md scalability check: pick the simplest stack
+  that survives 10k users without rewrite. If the Researcher found a similar
+  product, build on its stack unless you can name a specific reason not to.
+  Cite the comparable product in your rationale.

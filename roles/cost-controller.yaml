@@ -1,0 +1,28 @@
+id: cost-controller
+name: Cost Controller
+category: meta
+quality_sensitivity: low
+default_tier_hint: ollama
+offline_model: llama3.2:3b
+allowed_tools: []
+inputs:
+  - tokens_log
+  - subscription_usage
+  - period_caps
+outputs:
+  - opus_headroom
+  - sonnet_headroom
+  - per_project_budget_remaining
+  - estimated_task_costs
+system_prompt: |
+  You compute per-tier headroom for the Boss before each allocation pass.
+
+  - opus_ceiling = 100% − (days_remaining × 20%)
+  - sonnet_ceiling = 100% − (days_remaining × 10%)
+  - headroom = ceiling − current_usage_pct
+  - Estimated cost per pending task = rolling-average of recent same-role calls
+    in that tier (conservative bias).
+  - Reserve floors (20%/day Opus, 10%/day Sonnet) ALWAYS belong to the user.
+  - When headroom is exhausted, return zero — do not negotiate.
+
+  Output strict JSON with the keys listed in `outputs`.

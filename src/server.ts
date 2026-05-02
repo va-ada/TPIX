@@ -4,6 +4,7 @@ import { config, VERSION } from "./config.ts";
 import { logger } from "./logger.ts";
 import "./db.ts";
 import { route } from "./llm/router.ts";
+import { roles } from "./roles/registry.ts";
 
 const app = Fastify({ loggerInstance: logger });
 
@@ -13,7 +14,18 @@ app.get("/health", async () => ({
   ok: true,
   uptime_ms: Date.now() - startedAt,
   version: VERSION,
+  roles_loaded: roles.size(),
 }));
+
+app.get("/roles", async () => roles.all());
+
+app.get("/roles/:id", async (req, reply) => {
+  const id = (req.params as { id: string }).id;
+  if (!roles.has(id)) {
+    return reply.code(404).send({ error: `unknown role: ${id}` });
+  }
+  return roles.get(id);
+});
 
 const EchoQuery = z.object({
   role: z.string().default("boss"),
