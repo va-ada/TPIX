@@ -5,6 +5,13 @@ import { logger } from "./logger.ts";
 import "./db.ts";
 import { route } from "./llm/router.ts";
 import { roles } from "./roles/registry.ts";
+import {
+  createProject,
+  getProject,
+  listProjects,
+} from "./repos/projects.ts";
+import { listMessages } from "./repos/messages.ts";
+import { runBossTurn, startUsageWatchdog } from "./agents/boss.ts";
 
 const app = Fastify({ loggerInstance: logger });
 
@@ -26,6 +33,39 @@ app.get("/roles/:id", async (req, reply) => {
   }
   return roles.get(id);
 });
+
+const NewProjectBody = z.object({ idea: z.string().min(3) });
+
+app.post("/projects", async (req, reply) => {
+  const parsed = NewProjectBody.safeParse(req.body);
+  if (!parsed.success) return reply.code(400).send({ error: parsed.error.format() });
+  const project = createProject(parsed.data.idea);
+  const turn = await runBossTurn({ projectId: project.id, userMessage: parsed.data.idea });
+  return { project, boss: turn };
+});
+
+app.get("/projects", async () => listProjects());
+
+app.get("/projects/:id", async (req, reply) => {
+  const id = (req.params as { id: string }).id;
+  const project = getProject(id);
+  if (!project) return reply.code(404).send({ error: "unknown project" });
+  return { project, messages: listMessages(id) };
+});
+
+const MessageBody = z.object({ text: z.string().min(1) });
+
+app.post("/projects/:id/messages", async (req, reply) => {
+  const id = (req.params as { id: string }).id;
+  const project = getProject(id);
+  if (!project) return reply.code(404).send({ error: "unknown project" });
+  const parsed = MessageBody.safeParse(req.body);
+  if (!parsed.success) return reply.code(400).send({ error: parsed.error.format() });
+  const turn = await runBossTurn({ projectId: id, userMessage: parsed.data.text });
+  return { boss: turn };
+});
+
+startUsageWatchdog();
 
 const EchoQuery = z.object({
   role: z.string().default("boss"),
