@@ -18,6 +18,7 @@ import {
   type PendingTask,
 } from "./agents/boss.ts";
 import { getOpusHeadroom, getSonnetHeadroom } from "./cost/headroom.ts";
+import { runReviewers, MAX_TASK_ATTEMPTS } from "./reviewers.ts";
 
 const DEFAULT_CONCURRENCY = 3;
 
@@ -33,9 +34,17 @@ const finishAgentRun = db.prepare(`
 `);
 
 const insertTaskRun = db.prepare(`
-  INSERT INTO task_runs (task_id, attempt, status, model, started_at, finished_at)
-  VALUES (@task_id, @attempt, @status, @model, datetime('now'), datetime('now'))
+  INSERT INTO task_runs (task_id, attempt, status, model, pass1_result, pass2_result, started_at, finished_at)
+  VALUES (@task_id, @attempt, @status, @model, @pass1_result, @pass2_result, datetime('now'), datetime('now'))
 `);
+
+const countTaskRunsStmt = db.prepare<[string], { n: number }>(`
+  SELECT COUNT(*) as n FROM task_runs WHERE task_id = ?
+`);
+
+function attemptCount(taskId: string): number {
+  return countTaskRunsStmt.get(taskId)?.n ?? 0;
+}
 
 export interface DispatchResult {
   ranTaskIds: string[];
@@ -137,14 +146,36 @@ export async function dispatchProject(
       }
 
       finishAgentRun.run(result.text, result.sessionId, "succeeded", agentRunId);
+
+      // QA pipeline: trigger relevant reviewers in parallel
+      const review = await runReviewers({ task, output: result.text, projectId });
+      const attempts = attemptCount(task.id) + 1;
+
       insertTaskRun.run({
         task_id: task.id,
-        attempt: 1,
-        status: "completed",
+        attempt: attempts,
+        status: review.approved ? "approved" : "rework_requested",
         model: result.model,
+        pass1_result: review.results.find((r) => r.reviewerId === "tester")?.verdict ?? null,
+        pass2_result: review.combinedCritique || null,
       });
-      setTaskStatus(task.id, "done");
-      ranTaskIds.push(task.id);
+
+      if (review.approved) {
+        setTaskStatus(task.id, "done");
+        ranTaskIds.push(task.id);
+      } else if (attempts >= MAX_TASK_ATTEMPTS) {
+        setTaskStatus(task.id, "blocked_awaiting_user");
+        logger.warn(
+          { taskId: task.id, attempts, critique: review.combinedCritique },
+          "task exceeded max review attempts — escalating to user",
+        );
+      } else {
+        setTaskStatus(task.id, "needs_rework");
+        logger.info(
+          { taskId: task.id, attempt: attempts, critique: review.combinedCritique.slice(0, 200) },
+          "task needs rework",
+        );
+      }
     } catch (outerErr) {
       logger.error({ err: outerErr, taskId: task.id }, "unhandled task error");
       setTaskStatus(task.id, "needs_rework");
@@ -177,6 +208,11 @@ export async function dispatchProject(
   return { ranTaskIds, blockedTaskIds, remainingPending };
 }
 
+const lastCritiqueStmt = db.prepare<[string], { pass2_result: string | null; attempt: number }>(`
+  SELECT pass2_result, attempt FROM task_runs WHERE task_id = ?
+  ORDER BY id DESC LIMIT 1
+`);
+
 function buildTaskPrompt(task: Task, projectSlug: string): string {
   const lines: string[] = [];
   lines.push(`# Task ${task.id}`);
@@ -185,6 +221,19 @@ function buildTaskPrompt(task: Task, projectSlug: string): string {
   if (task.pass1) lines.push(`Pass-1 spec (synthetic test): ${task.pass1}`);
   if (task.pass2) lines.push(`Pass-2 spec (real-world test): ${task.pass2}`);
   lines.push(`Workspace: projects/${projectSlug}/`);
+
+  // If this is a rework attempt, surface the previous review critique
+  if (task.status === "needs_rework") {
+    const last = lastCritiqueStmt.get(task.id);
+    if (last?.pass2_result) {
+      lines.push(``);
+      lines.push(`## Prior review (attempt ${last.attempt}) flagged the following:`);
+      lines.push(last.pass2_result);
+      lines.push(``);
+      lines.push(`Address every point. This is attempt ${last.attempt + 1}/${MAX_TASK_ATTEMPTS}.`);
+    }
+  }
+
   lines.push(``);
   lines.push(`Do the work. When done, return a short summary of what changed and what you tested.`);
   return lines.join("\n");
