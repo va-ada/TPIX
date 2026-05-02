@@ -19,6 +19,7 @@ import {
 } from "./agents/boss.ts";
 import { getOpusHeadroom, getSonnetHeadroom } from "./cost/headroom.ts";
 import { runReviewers, MAX_TASK_ATTEMPTS } from "./reviewers.ts";
+import { commitIfWorthIt, noteTaskCompleted } from "./git.ts";
 
 const DEFAULT_CONCURRENCY = 3;
 
@@ -163,12 +164,27 @@ export async function dispatchProject(
       if (review.approved) {
         setTaskStatus(task.id, "done");
         ranTaskIds.push(task.id);
+        noteTaskCompleted(projectId);
+        // Auto-commit if heuristics say we should (debounced internally)
+        await commitIfWorthIt({
+          projectId,
+          reason: `${task.role}: ${task.description.slice(0, 80)}`,
+          force: false,
+          authorRole: task.role,
+        });
       } else if (attempts >= MAX_TASK_ATTEMPTS) {
         setTaskStatus(task.id, "blocked_awaiting_user");
         logger.warn(
           { taskId: task.id, attempts, critique: review.combinedCritique },
           "task exceeded max review attempts — escalating to user",
         );
+        // Force a snapshot before we ask the user about this task
+        await commitIfWorthIt({
+          projectId,
+          reason: `escalation: ${task.id} (${task.role}) hit max attempts`,
+          force: true,
+          authorRole: "boss",
+        });
       } else {
         setTaskStatus(task.id, "needs_rework");
         logger.info(
@@ -260,6 +276,13 @@ function handleHardStop(task: Task, requiredTier: "opus" | "sonnet"): void {
   });
   logger.warn(
     { taskId: task.id, requiredTier, escalation: escalation.text },
-    "task hard-stopped — required tier unavailable; awaiting user (Telegram bot in Phase 6 will deliver this)",
+    "task hard-stopped — required tier unavailable; awaiting user via Telegram bot",
   );
+  // Force a snapshot commit before escalating
+  void commitIfWorthIt({
+    projectId: task.project_id,
+    reason: `hard-stop: ${task.id} requires ${requiredTier}`,
+    force: true,
+    authorRole: "boss",
+  });
 }

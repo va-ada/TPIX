@@ -23,6 +23,7 @@ import {
   getOpusCap,
   getSonnetCap,
 } from "../cost/headroom.ts";
+import { commitIfWorthIt } from "../git.ts";
 
 const TG_MESSAGE_LIMIT = 4096;
 let activeProjectId: string | null = null;
@@ -306,6 +307,13 @@ async function offerPlanGeneration(projectId: string): Promise<void> {
   await sendToUser(`✅ Ready to plan. Generating…`);
   try {
     const plan = await generatePlan(projectId);
+    // Force-commit any pending workspace state before the user is asked to act
+    await commitIfWorthIt({
+      projectId,
+      reason: "plan ready, awaiting user approval",
+      force: true,
+      authorRole: "boss",
+    });
     const phasesSummary = plan.phases
       .map((p) => `• ${p.name}: ${p.tasks.length} task(s)`)
       .join("\n");
