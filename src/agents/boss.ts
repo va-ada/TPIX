@@ -15,6 +15,7 @@ import {
   getOpusHeadroom,
   getSonnetHeadroom,
   estimateTaskCostPct,
+  snapshotInternal,
   type Headroom,
 } from "../cost/headroom.ts";
 
@@ -279,6 +280,8 @@ export function tickWatchdog(): WatchdogTick {
       { opus: opus.headroom_pct, sonnet: sonnet.headroom_pct },
       "headroom changed",
     );
+    // Persist a snapshot so PWA + downstream watchers can chart over time
+    snapshotInternal();
   }
   return { changed, opus, sonnet, prevOpus, prevSonnet };
 }

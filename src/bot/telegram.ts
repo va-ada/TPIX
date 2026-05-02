@@ -13,7 +13,16 @@ import { generatePlan } from "../agents/planner.ts";
 import { latestPlan, approvePlan } from "../repos/plans.ts";
 import { getTask, setTaskStatus } from "../repos/tasks.ts";
 import { dispatchProject } from "../dispatcher.ts";
-import { getOpusHeadroom, getSonnetHeadroom } from "../cost/headroom.ts";
+import {
+  getOpusHeadroom,
+  getSonnetHeadroom,
+  applyManualSync,
+  setOpusCap,
+  setSonnetCap,
+  setPeriod,
+  getOpusCap,
+  getSonnetCap,
+} from "../cost/headroom.ts";
 
 const TG_MESSAGE_LIMIT = 4096;
 let activeProjectId: string | null = null;
@@ -135,12 +144,66 @@ export async function startTelegramBot(): Promise<void> {
     if (rejectUnauthorized(ctx)) return;
     const o = getOpusHeadroom();
     const s = getSonnetHeadroom();
+    const opusCap = getOpusCap();
+    const sonnetCap = getSonnetCap();
     await ctx.reply(
       [
-        `Opus:   used ${o.used_pct.toFixed(1)}%  ceiling ${o.ceiling_pct}%  headroom ${o.headroom_pct.toFixed(1)}%  (reserve ${o.reserve_pct}% for ${o.days_remaining}d)`,
-        `Sonnet: used ${s.used_pct.toFixed(1)}%  ceiling ${s.ceiling_pct}%  headroom ${s.headroom_pct.toFixed(1)}%  (reserve ${s.reserve_pct}% for ${s.days_remaining}d)`,
+        `Opus:   used ${o.used_pct.toFixed(1)}%  ceiling ${o.ceiling_pct}%  headroom ${o.headroom_pct.toFixed(1)}%  (reserve ${o.reserve_pct}% for ${o.days_remaining}d) [src: ${o.source}]`,
+        `Sonnet: used ${s.used_pct.toFixed(1)}%  ceiling ${s.ceiling_pct}%  headroom ${s.headroom_pct.toFixed(1)}%  (reserve ${s.reserve_pct}% for ${s.days_remaining}d) [src: ${s.source}]`,
+        ``,
+        `Caps: opus=${opusCap ?? "(unset)"} tokens, sonnet=${sonnetCap ?? "(unset)"} tokens`,
+        `Set with: /setcap opus <tokens> | /setcap sonnet <tokens>`,
+        `Override usage: /sync <opus_pct> <sonnet_pct>  (1h TTL)`,
+        `Reset period:   /period <YYYY-MM-DD> <length_days>`,
       ].join("\n"),
     );
+  });
+
+  bot.command("sync", async (ctx) => {
+    if (rejectUnauthorized(ctx)) return;
+    const parts = ctx.match.trim().split(/\s+/);
+    if (parts.length !== 2) {
+      return ctx.reply("Usage: /sync <opus_pct> <sonnet_pct>  e.g. /sync 35 60");
+    }
+    const opusPct = Number(parts[0]);
+    const sonnetPct = Number(parts[1]);
+    if (!Number.isFinite(opusPct) || !Number.isFinite(sonnetPct)) {
+      return ctx.reply("Both values must be numbers.");
+    }
+    applyManualSync(opusPct, sonnetPct);
+    await ctx.reply(`Synced. Opus=${opusPct}% Sonnet=${sonnetPct}% (TTL 1h)`);
+  });
+
+  bot.command("setcap", async (ctx) => {
+    if (rejectUnauthorized(ctx)) return;
+    const parts = ctx.match.trim().split(/\s+/);
+    if (parts.length !== 2) {
+      return ctx.reply("Usage: /setcap <opus|sonnet> <tokens>");
+    }
+    const tier = parts[0]!.toLowerCase();
+    const tokens = Number(parts[1]);
+    if (!Number.isFinite(tokens) || tokens <= 0) {
+      return ctx.reply("Tokens must be a positive number.");
+    }
+    if (tier === "opus") setOpusCap(tokens);
+    else if (tier === "sonnet") setSonnetCap(tokens);
+    else return ctx.reply("Tier must be opus or sonnet.");
+    await ctx.reply(`Cap set: ${tier} = ${tokens.toLocaleString()} tokens`);
+  });
+
+  bot.command("period", async (ctx) => {
+    if (rejectUnauthorized(ctx)) return;
+    const parts = ctx.match.trim().split(/\s+/);
+    if (parts.length !== 2) {
+      return ctx.reply("Usage: /period <YYYY-MM-DD> <length_days>  e.g. /period 2026-05-02 7");
+    }
+    const date = parts[0]!;
+    const days = Number(parts[1]);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(days) || days <= 0) {
+      return ctx.reply("Date must be YYYY-MM-DD; days must be > 0.");
+    }
+    setPeriod(`${date}T00:00:00.000Z`, days);
+    await ctx.reply(`Period set: starts ${date}, length ${days}d`);
   });
 
   bot.command("cancel", async (ctx) => {
