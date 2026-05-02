@@ -5,13 +5,14 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "tsx watch src/server.ts",
-    "start": "tsx src/server.ts",
+    "dev": "node --env-file-if-exists=.env --import tsx --watch src/server.ts",
+    "start": "node --env-file-if-exists=.env --import tsx src/server.ts",
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "smoke:claude": "tsx scripts/smoke-claude.ts",
-    "smoke:ollama": "tsx scripts/smoke-ollama.ts",
+    "smoke:claude": "node --env-file-if-exists=.env --import tsx scripts/smoke-claude.ts",
+    "smoke:ollama": "node --env-file-if-exists=.env --import tsx scripts/smoke-ollama.ts",
+    "smoke:telegram": "node --env-file-if-exists=.env --import tsx scripts/smoke-telegram.ts",
     "typecheck": "tsc --noEmit"
   },
   "engines": {
@@ -22,6 +23,7 @@
     "better-sqlite3": "^12.9.0",
     "execa": "^9.6.1",
     "fastify": "^5.8.5",
+    "grammy": "^1.42.0",
     "pino": "^10.3.1",
     "simple-git": "^3.36.0",
     "yaml": "^2.8.4",

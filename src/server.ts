@@ -16,6 +16,7 @@ import { generatePlan } from "./agents/planner.ts";
 import { latestPlan, approvePlan } from "./repos/plans.ts";
 import { listTasks } from "./repos/tasks.ts";
 import { dispatchProject } from "./dispatcher.ts";
+import { startTelegramBot } from "./bot/telegram.ts";
 
 const app = Fastify({ loggerInstance: logger });
 
@@ -121,6 +122,7 @@ app.get("/projects/:id/tasks", async (req, reply) => {
 });
 
 startUsageWatchdog();
+void startTelegramBot();
 
 const EchoQuery = z.object({
   role: z.string().default("boss"),
