@@ -123,6 +123,7 @@ app.get("/projects/:id/tasks", async (req, reply) => {
 
 startUsageWatchdog();
 void startTelegramBot();
+import("./connectivity.ts").then(({ startConnectivityProbe }) => startConnectivityProbe());
 
 const EchoQuery = z.object({
   role: z.string().default("boss"),
