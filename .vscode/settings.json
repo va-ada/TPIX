@@ -1,0 +1,19 @@
+{
+  "files.watcherExclude": {
+    "**/projects/**/node_modules/**": true,
+    "**/projects/**/.next/**": true,
+    "**/projects/**/out/**": true,
+    "**/projects/**/.git/**": true
+  },
+  "files.exclude": {
+    "**/projects/**/node_modules": true,
+    "**/projects/**/.next": true,
+    "**/projects/**/out": true
+  },
+  "search.exclude": {
+    "**/projects/**/node_modules": true,
+    "**/projects/**/.next": true,
+    "**/projects/**/out": true
+  },
+  "typescript.preferences.includePackageJsonAutoImports": "off"
+}

@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { db } from "./db.ts";
 import { logger } from "./logger.ts";
@@ -309,13 +309,21 @@ function buildTaskPrompt(task: Task, projectSlug: string): string {
   return lines.join("\n");
 }
 
-function handleWorkspaceMkdir(slug: string) {
+function ensureWorkspace(slug: string): void {
   const dir = join("projects", slug);
   mkdirSync(dir, { recursive: true });
-}
-
-function ensureWorkspace(slug: string): void {
-  handleWorkspaceMkdir(slug);
+  // Copy the project .gitignore template so git (and VS Code) ignore
+  // node_modules / .next / out within generated project workspaces.
+  const dest = join(dir, ".gitignore");
+  const templatePath = join(process.cwd(), ".gitignore_project_template");
+  try {
+    if (!existsSync(dest)) {
+      const template = readFileSync(templatePath, "utf8");
+      writeFileSync(dest, template, "utf8");
+    }
+  } catch {
+    // template missing — not fatal
+  }
 }
 
 function handleHardStop(task: Task, requiredTier: "opus" | "sonnet"): void {
